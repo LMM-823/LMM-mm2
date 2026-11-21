@@ -1,4 +1,4 @@
--- [[ 🔪 LMM MM2 (beta) v3.9 | 防踢Anti-AFK按钮 + 自动糖果下方速度调节 + 顶部折叠栏 ]]
+-- [[ 🔪 LMM MM2 (beta) v3.9 | 防踢Anti-AFK按钮 + 自动糖果下方速度调节 + 顶部折叠栏 | 手机端触控修复 ]]
 
 local _P = game:GetService("Players")
 local _RS = game:GetService("RunService")
@@ -36,7 +36,23 @@ local _S = Instance.new("ScreenGui")
 _S.Name = "LMM_MM2_Gui"
 _S.ResetOnSpawn = false
 _S.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+_S.IgnoreGuiInset = true
 _S.Parent = targetParent
+
+-- 统一点击绑定函数（兼容手机触屏 / 电脑鼠标 / 手柄）
+local function BindTap(btn, callback)
+    btn.Active = true
+    local busy = false
+    btn.Activated:Connect(function()
+        if busy then return end
+        busy = true
+        task.spawn(function()
+            pcall(callback)
+            task.wait(0.12)
+            busy = false
+        end)
+    end)
+end
 
 -- 状态配置
 local _Config = {
@@ -48,7 +64,7 @@ local _Config = {
     AntiAFK = false,
     HideName = false,
     AutoExecute = false,
-    CandySpeed = 20, -- 默认自动糖果移动速度
+    CandySpeed = 20,
     ThemeColor = Color3.fromRGB(99, 102, 241),
     BgColor = Color3.fromRGB(15, 15, 24),
     ButtonColor = Color3.fromRGB(22, 22, 35),
@@ -141,8 +157,7 @@ local function CreateHeaderCtrl(text, xOffset, bgCol, hoverCol, callback)
     btn.MouseEnter:Connect(function() _TS:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = hoverCol}):Play() end)
     btn.MouseLeave:Connect(function() _TS:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = bgCol}):Play() end)
     
-    btn.MouseButton1Click:Connect(callback)
-    btn.TouchTap:Connect(callback)
+    BindTap(btn, callback)
     return btn
 end
 
@@ -167,6 +182,9 @@ local isMinimized = false
 
 -- 🧹 清理函数
 local function CleanupAll()
+    _Config.AutoCollectCandy = false
+    _Config.AutoFarmer = false
+    _Config.AntiAFK = false
     for _, p in pairs(_P:GetPlayers()) do
         if p.Character then
             local box = p.Character:FindFirstChild("LMM_BoxESP")
@@ -211,7 +229,7 @@ CreateHeaderCtrl("—", -76, Color3.fromRGB(45, 45, 65), Color3.fromRGB(70, 70, 
     }):Play()
 end)
 
-miniBar.MouseButton1Click:Connect(function()
+BindTap(miniBar, function()
     if not isMinimized then return end
     _TS:Create(miniBar, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
         Position = UDim2.new(0.5, -110, 0, -50)
@@ -235,19 +253,6 @@ local sidebar = Instance.new("Frame", _Main)
 sidebar.Size = UDim2.new(0, 115, 1, -55)
 sidebar.Position = UDim2.new(0, 12, 0, 52)
 sidebar.BackgroundTransparency = 1
-
-local function BindClick(btn, callback)
-    local debounce = false
-    local function trigger()
-        if debounce then return end
-        debounce = true
-        callback()
-        task.wait(0.15)
-        debounce = false
-    end
-    btn.MouseButton1Click:Connect(trigger)
-    btn.TouchTap:Connect(trigger)
-end
 
 -- 页面容器
 local pages = {}
@@ -301,7 +306,7 @@ local function CreateNavBtn(text, tabName, yPos)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
 
     table.insert(navButtons, btn)
-    BindClick(btn, function()
+    BindTap(btn, function()
         SwitchTab(tabName, btn)
     end)
     return btn
@@ -370,7 +375,7 @@ local function CreateToggle(parentPage, name, yPos, configKey)
     end
     refreshUI(false)
 
-    local function toggleAction()
+    BindTap(btn, function()
         _Config[configKey] = not _Config[configKey]
         refreshUI(true)
         if configKey == "AutoExecute" then
@@ -406,10 +411,7 @@ local function CreateToggle(parentPage, name, yPos, configKey)
                 end
             end
         end
-    end
-
-    btn.MouseButton1Click:Connect(toggleAction)
-    btn.TouchTap:Connect(toggleAction)
+    end)
 end
 
 -- ==========================================
@@ -483,7 +485,6 @@ CreateToggle(pageData, "隐藏名称为乱码 (Hide Name)", 168, "HideName")
 CreateToggle(pageAuto, "智能自动挂机农夫 (Auto Farmer)", 0, "AutoFarmer")
 CreateToggle(pageAuto, "自动拾取糖果 (Auto Candy)", 52, "AutoCollectCandy")
 
--- 【新增：自动糖果下方增加调速度输入框】
 local speedCard = Instance.new("Frame", pageAuto)
 speedCard.Size = UDim2.new(1, -10, 0, 42)
 speedCard.Position = UDim2.new(0, 0, 0, 104)
@@ -524,7 +525,6 @@ speedBox.FocusLost:Connect(function()
     speedBox.Text = tostring(_Config.CandySpeed)
 end)
 
--- 糖果收益统计面板
 local candyStatsCard = Instance.new("Frame", pageAuto)
 candyStatsCard.Size = UDim2.new(1, -10, 0, 68)
 candyStatsCard.Position = UDim2.new(0, 0, 0, 152)
@@ -567,7 +567,7 @@ CreateToggle(pageVisual, "掉落枪支实时追踪 (Gun ESP)", 52, "GunDropESP")
 CreateToggle(pageVisual, "万圣节糖果透视 (Candy ESP)", 104, "CandyESP")
 
 -- ==========================================
--- 【4. 设定面板】新增 Anti-AFK 防踢保护开关
+-- 【4. 设定面板】
 -- ==========================================
 local settingsTitle1 = Instance.new("TextLabel", pageSettings)
 settingsTitle1.Size = UDim2.new(1, 0, 0, 22)
@@ -605,7 +605,7 @@ local function CreateBtnColorBlock(themeColor, btnColor, xPos, yPos, w, h)
     end
     str.Transparency = 0.3
 
-    BindClick(btn, function()
+    BindTap(btn, function()
         _Config.ThemeColor = themeColor
         _Config.ButtonColor = btnColor
         if currentTabBtn then
@@ -665,7 +665,7 @@ local function CreateBgColorBlock(bgColor, xPos, yPos, w, h)
     end
     str.Transparency = 0.3
 
-    BindClick(btn, function()
+    BindTap(btn, function()
         _Config.BgColor = bgColor
         _TS:Create(_Main, TweenInfo.new(0.3), {BackgroundColor3 = bgColor}):Play()
     end)
@@ -692,6 +692,7 @@ resizer.Text = "◢"
 resizer.TextColor3 = Color3.fromRGB(150, 150, 180)
 resizer.TextSize = 15
 resizer.Font = Enum.Font.GothamBold
+resizer.Active = true
 
 local resizing = false
 local resizeStart, startSize
@@ -831,6 +832,59 @@ task.spawn(function()
     end
 end)
 
+-- 独立自动收糖循环（避免 Tween 等待阻塞主刷新）
+task.spawn(function()
+    while _S and _S.Parent do
+        if _Config.AutoCollectCandy then
+            pcall(function()
+                local inRound, coinContainer = IsInActiveRound()
+                local myChar = _LP.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+                if inRound and coinContainer and myHrp and myHum and myHum.Health > 0 then
+                    for _, part in pairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+
+                    local candies = {}
+                    for _, coin in pairs(coinContainer:GetChildren()) do
+                        local cPart = coin:IsA("BasePart") and coin or coin:FindFirstChildWhichIsA("BasePart")
+                        if cPart and cPart.Parent then
+                            local dist = (cPart.Position - myHrp.Position).Magnitude
+                            if dist < 120 then
+                                table.insert(candies, {part = cPart, dist = dist})
+                            end
+                        end
+                    end
+
+                    table.sort(candies, function(a, b)
+                        return a.dist < b.dist
+                    end)
+
+                    for _, item in ipairs(candies) do
+                        if not _Config.AutoCollectCandy then break end
+                        local cPart = item.part
+                        if cPart and cPart.Parent and myHrp.Parent then
+                            local dist = (cPart.Position - myHrp.Position).Magnitude
+                            myHum:MoveTo(cPart.Position)
+                            local targetCF = CFrame.new(cPart.Position + Vector3.new(0, 0.5, 0)) * myHrp.CFrame.Rotation
+                            local duration = math.max(dist / _Config.CandySpeed, 0.08)
+                            local tween = _TS:Create(myHrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCF})
+                            tween:Play()
+                            tween.Completed:Wait()
+                            totalCandiesCollected = totalCandiesCollected + 1
+                            task.wait(0.2)
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(0.25)
+    end
+end)
+
 -- ==========================================
 -- 主循环
 -- ==========================================
@@ -859,7 +913,6 @@ task.spawn(function()
                 lastRoundState = inRound
             end
 
-            -- 数据面板名称与状态实时刷新
             statsText.Text = string.format(
                 "当前状态：%s\n服务器人数：%d / %d 人  (v3.9)",
                 inRound and ("对局中 " .. roleText) or "大厅等待中",
@@ -1000,51 +1053,6 @@ task.spawn(function()
                             cTxt.TextColor3 = _Config.ColorCandy
                             cTxt.TextStrokeTransparency = 1
                             cTxt.Text = "🍬 糖果"
-                        end
-                    end
-                end
-            end
-
-            -- 自动拾取糖果 (Auto Collect Candy) + 根据自定义速度移动
-            if _Config.AutoCollectCandy and inRound and coinContainer then
-                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-                if myHrp and myHum then
-                    for _, part in pairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
-                    end
-
-                    local candies = {}
-                    for _, coin in pairs(coinContainer:GetChildren()) do
-                        local cPart = coin:IsA("BasePart") and coin or coin:FindFirstChildWhichIsA("BasePart")
-                        if cPart and cPart.Parent then
-                            local dist = (cPart.Position - myHrp.Position).Magnitude
-                            if dist < 120 then
-                                table.insert(candies, {part = cPart, dist = dist})
-                            end
-                        end
-                    end
-
-                    table.sort(candies, function(a, b)
-                        return a.dist < b.dist
-                    end)
-
-                    for _, item in ipairs(candies) do
-                        if not _Config.AutoCollectCandy then break end
-                        local cPart = item.part
-                        if cPart and cPart.Parent then
-                            local dist = (cPart.Position - myHrp.Position).Magnitude
-                            myHum:MoveTo(cPart.Position)
-                            local targetCF = CFrame.new(cPart.Position + Vector3.new(0, 0.5, 0)) * myHrp.CFrame.Rotation
-                            local duration = math.max(dist / _Config.CandySpeed, 0.08)
-                            local tween = _TS:Create(myHrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCF})
-                            tween:Play()
-                            tween.Completed:Wait()
-                            
-                            totalCandiesCollected = totalCandiesCollected + 1
-                            task.wait(0.2)
                         end
                     end
                 end
